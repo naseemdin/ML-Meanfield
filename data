@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+# coding: utf-8
+import pandas as pd
+import numpy as np
+import numpy as np
+import argparse
+import xml.etree.ElementTree as ET
+ha = 27.211396132
+def get_data():
+    filename  = "../ORbitals/pwscf.xml"
+    eig       = ET.parse(filename)
+    eigroot   = eig.getroot()
+    alleigs   = eigroot.findall("output/band_structure/ks_energies/eigenvalues")
+    eigs      = [np.mat(item.text) for item in alleigs]
+    eigs      = np.squeeze(np.asarray(eigs))*ha
+    nbnd      = eigroot.find('output/band_structure/ks_energies/eigenvalues').get('size')
+    nkp       = eigroot.find('output/band_structure/nks').text
+    nelec     = eigroot.find('output/band_structure/nelec').text
+    float(nelec)
+    vbi       = float(0.5)*float(nelec)-1
+    cbi       = vbi + 1 
+    nbnd_i    = vbi - 4
+    nbnd_j    = vbi + 4
+    rng       = nbnd_j - nbnd_i
+    emf       = eigs.flatten()
+    df        = pd.DataFrame(eigs)
+    df        = df.iloc[:,int(nbnd_i+1):int(nbnd_j+1)]
+    emf       = df.to_numpy().flatten()
+    nbnd      = 100
+    vxc_data  = pd.read_csv('../ORbitals/vxc.dat' ,  sep="\s+")
+    data      = np.genfromtxt('./sigma_hp.log', skip_header=21, skip_footer=38, dtype='unicode', filling_values=0., comments='k') #header=None
+    sigma     = pd.DataFrame(data, columns=['n', 'Emf', 'Eo', 'X', 'SX-X', 'CH', 'Sig', 'Vxc', 'Eqp0', 'Eqp1', 'CH`', 'Sig`', 'Eqp0`', 'Eqp1`',  'Znk'])
+    sigma     = sigma[sigma["n"].str.contains("n|k|===")==False]#.tail(20)   #searches for all the lines that contains the n or k and removes
+    sigma     = sigma[['Emf', 'Eqp1']]
+    sigma     = sigma.to_numpy()
+    sigma     = sigma.astype(np.float32)
+    delta     = sigma[:,1]-sigma[:,0] 
+    delta     = np.array(delta)
+    vxc       = vxc_data.iloc[:,2][vxc_data.iloc[:,0] == 1.0] # here I select the vxc and remove all the lines of the kpoints
+    vxc_mat   = df_split = np.array_split(vxc, int(nkp)) # here I split them into a matrix of kpt vs bands
+    vxc_df    = pd.DataFrame(np.mat(vxc_mat)).iloc[:,int(nbnd_i+1):int(nbnd_j+1)]
+    vxc_np    = vxc_df.to_numpy().flatten()
+    start     = vbi-nbnd_i-1
+    emf       = emf.astype(np.float32)
+    vb=[]
+    for i in range(int(start), emf.shape[0], int(rng)):
+        vb.append(emf[i])
+    vbm = max(vb)
+    cb=[]
+    for i in range(int(start+1) ,emf.shape[0],int(rng)):
+        cb.append(emf[i])
+    cbm = min(cb)
+    midgap        =(vbm + cbm)/2.
+    emf_shifted   = [x - midgap for x in emf[:]]
+    emf_rescaled  = []
+    for i in emf_shifted:
+        i = i/np.max(emf_shifted)*0.5 if (i> 0) else i/np.min(emf_shifted)*-0.5
+        emf_rescaled.append(i)
+    raw    = []
+    for j in range(1,3001,1):
+        array = np.loadtxt('../ORbitals/kb-eig-'+str(j)+'.dat', skiprows=8, max_rows=6561 - 8)
+        array = array.reshape(1 , len(array) * 5)
+        an_array = np.where((np.abs(array)<= 1.0E-6),0, array)
+        large = np.max(an_array)
+        features = []
+        for a in an_array:
+            a = a
+            features.append(a)
+        raw.append(features)
+    arr  = np.array(raw)
+    raw1 = np.squeeze(arr, axis=1)
+    data = np.column_stack((raw1, emf_rescaled[0:3000], delta[0:3000]))
+#    print(data.shape, delta[0:1].shape, delta.shape, len(emf_shifted))
+    only_data= data[:, :-1]
+    labels=data[:,-1]
+    return only_data,labels
+
+get_data()
